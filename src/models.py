@@ -1,12 +1,55 @@
-"""Kelas domain Sistem Manajemen Jaringan Komputer (kode UTS)."""
+"""Kelas domain Sistem Manajemen Jaringan Komputer (dengan exception handling)."""
+import re
+
+from exceptions import (
+    DeviceOfflineError,
+    InvalidAddressError,
+    PacketError,
+    PortError,
+    RoutingError,
+    TopologyError,
+    TTLExpiredError,
+)
 
 
 class Packet:
+    MAX_TTL = 255
+
     def __init__(self, source_ip, destination_ip, payload, ttl=64):
-        self.source_ip = source_ip
-        self.destination_ip = destination_ip
-        self.payload = payload
-        self.ttl = ttl                      # lewat setter
+        self.source_ip = source_ip              # lewat setter
+        self.destination_ip = destination_ip    # lewat setter
+        self.payload = payload                  # lewat setter
+        self.ttl = ttl                          # lewat setter
+
+    @property
+    def source_ip(self):
+        return self.__source_ip
+
+    @source_ip.setter
+    def source_ip(self, value):
+        if not NetworkDevice.is_valid_ip(value):
+            raise InvalidAddressError(value, "IP sumber")
+        self.__source_ip = value
+
+    @property
+    def destination_ip(self):
+        return self.__destination_ip
+
+    @destination_ip.setter
+    def destination_ip(self, value):
+        if not NetworkDevice.is_valid_ip(value):
+            raise InvalidAddressError(value, "IP tujuan")
+        self.__destination_ip = value
+
+    @property
+    def payload(self):
+        return self.__payload
+
+    @payload.setter
+    def payload(self, value):
+        if not isinstance(value, str) or not value.strip():
+            raise PacketError("Payload paket tidak boleh kosong", "payload", value)
+        self.__payload = value
 
     @property
     def ttl(self):
@@ -14,23 +57,34 @@ class Packet:
 
     @ttl.setter
     def ttl(self, value):
-        if value < 0 or value > 255:
-            raise ValueError("TTL harus 0-255")
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise PacketError(f"TTL harus bilangan bulat, diterima: {value!r}", "ttl", value)
+        if value < 0 or value > Packet.MAX_TTL:
+            raise PacketError(f"TTL harus 0-{Packet.MAX_TTL}, diterima: {value}", "ttl", value)
         self.__ttl = value
 
 
 class NetworkDevice:
     device_count = 0                        # class attribute
+    MAC_PATTERN = re.compile(r"^([0-9A-F]{2}:){5}[0-9A-F]{2}$")
 
     def __init__(self, hostname, ip_address, mac_address):
+        if not isinstance(hostname, str) or not hostname.strip():
+            raise TopologyError("Hostname perangkat tidak boleh kosong")
+        mac = str(mac_address).upper()
+        if not NetworkDevice.is_valid_mac(mac):
+            raise InvalidAddressError(mac_address, "MAC", hostname)
         self._hostname = hostname           # protected
-        self.ip_address = ip_address        # lewat setter
-        self.__mac_address = mac_address.upper()   # private
+        self.ip_address = ip_address        # lewat setter (bisa raise)
+        self.__mac_address = mac            # private
         self._is_online = False
+        # dihitung hanya jika semua validasi di atas lolos
         NetworkDevice.device_count += 1
 
     @staticmethod
     def is_valid_ip(ip):
+        if not isinstance(ip, str):
+            return False
         parts = ip.split(".")
         if len(parts) != 4:
             return False
@@ -38,6 +92,10 @@ class NetworkDevice:
             if not part.isdigit() or int(part) > 255:
                 return False
         return True
+
+    @staticmethod
+    def is_valid_mac(mac):
+        return bool(NetworkDevice.MAC_PATTERN.match(mac))
 
     @classmethod
     def get_device_count(cls):
@@ -54,22 +112,30 @@ class NetworkDevice:
     @ip_address.setter
     def ip_address(self, value):
         if not NetworkDevice.is_valid_ip(value):
-            raise ValueError(f"IP tidak valid: {value}")
+            raise InvalidAddressError(value, "IP", self._hostname)
         self.__ip_address = value
 
     @property
     def mac_address(self):
         return self.__mac_address
 
+    @property
+    def is_online(self):
+        return self._is_online
+
     def power_on(self):
         self._is_online = True
+
+    def power_off(self):
+        self._is_online = False
 
     def report(self, message):
         print(f"  {self._hostname}: {message}")
 
     def process_packet(self, packet):
-        is_for_me = packet.destination_ip == self.ip_address
-        return self._is_online and is_for_me
+        if not self._is_online:
+            raise DeviceOfflineError(self._hostname)
+        return packet.destination_ip == self.ip_address
 
     def __eq__(self, other):
         if not isinstance(other, NetworkDevice):
@@ -90,7 +156,7 @@ class LoggerMixin:
         self.__logs.append(message)
 
     def get_logs(self):
-        return self.__logs
+        return list(self.__logs)
 
 
 class Router(LoggerMixin, NetworkDevice):
