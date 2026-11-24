@@ -50,3 +50,35 @@ class TTLExpiredError(PacketError):
         self.destination = destination
         super().__init__(f"TTL paket ke {destination} habis, paket dibuang",
                          "ttl", 0, hostname)
+
+
+class DeviceOfflineError(NetworkError):
+    """Perangkat dalam keadaan OFF diminta memproses paket."""
+
+    def __init__(self, hostname, action="memproses paket"):
+        self.action = action            # aksi yang ditolak karena perangkat OFF
+        super().__init__(f"perangkat OFF, tidak dapat {action}", hostname)
+
+
+class PortError(NetworkError):
+    """Port switch di luar jangkauan atau sudah dipakai perangkat lain."""
+
+    def __init__(self, port, reason, hostname=None):
+        self.port = port
+        super().__init__(f"Port {port} {reason}", hostname)
+
+
+class RoutingError(NetworkError):
+    """Tidak ada rute atau perangkat tujuan tidak ditemukan."""
+
+    def __init__(self, destination, hostname):
+        self.destination = destination
+        super().__init__(f"tidak ada rute ke {destination}, paket dibuang", hostname)
+
+
+class TopologyError(NetworkError):
+    """Pelanggaran aturan topologi: bandwidth, perangkat ganda, link tidak sah."""
+
+    def __init__(self, message, topology=None, hostname=None):
+        self.topology = topology        # nama topologi tempat aturan dilanggar
+        super().__init__(message, hostname)
