@@ -160,46 +160,66 @@ class LoggerMixin:
 
 
 class Router(LoggerMixin, NetworkDevice):
+    PREFIX_PATTERN = re.compile(r"^(\d{1,3}\.){1,3}$")
+
     def __init__(self, hostname, ip_address, mac_address):
         super().__init__(hostname, ip_address, mac_address)
         self.__routing_table = {}           # prefix -> next hop
 
     def add_route(self, prefix, next_hop):
+        if not isinstance(prefix, str) or not Router.PREFIX_PATTERN.match(prefix):
+            raise InvalidAddressError(prefix, "prefix routing", self._hostname)
+        if not isinstance(next_hop, NetworkDevice):
+            raise TopologyError("Next hop harus berupa perangkat jaringan", hostname=self._hostname)
+        if next_hop is self:
+            raise TopologyError("Next hop tidak boleh router itu sendiri", hostname=self._hostname)
         self.__routing_table[prefix] = next_hop
 
     def process_packet(self, packet):       # override
         if not self._is_online:
-            return False
-        packet.ttl -= 1
+            raise DeviceOfflineError(self._hostname)
         destination = packet.destination_ip
+        if packet.ttl <= 1:                 # setelah dikurangi akan menjadi 0
+            packet.ttl = 0
+            self.log(f"TTL EXPIRED {destination}")
+            raise TTLExpiredError(destination, self._hostname)
+        packet.ttl -= 1
         for prefix, next_hop in self.__routing_table.items():
             if destination.startswith(prefix):
                 self.report(f"rute via {next_hop.hostname}")
                 return next_hop.process_packet(packet)
         self.log(f"DROP {destination}")
-        self.report("tidak ada rute, paket dibuang")
-        return False
+        raise RoutingError(destination, self._hostname)
 
 
 class Switch(NetworkDevice):
     def __init__(self, hostname, ip_address, mac_address, total_ports):
+        if isinstance(total_ports, bool) or not isinstance(total_ports, int) or total_ports < 1:
+            raise PortError(total_ports, "bukan jumlah port yang valid", hostname)
         super().__init__(hostname, ip_address, mac_address)
         self._total_ports = total_ports
         self.__port_table = {}              # port -> perangkat
 
     def connect_port(self, port, device):
+        if isinstance(port, bool) or not isinstance(port, int):
+            raise PortError(port, "harus berupa bilangan bulat", self._hostname)
         if port < 1 or port > self._total_ports:
-            raise ValueError(f"Port {port} tidak tersedia")
+            raise PortError(port, f"tidak tersedia (1-{self._total_ports})", self._hostname)
+        if port in self.__port_table:
+            used_by = self.__port_table[port].hostname
+            raise PortError(port, f"sudah dipakai {used_by}", self._hostname)
+        if device in self.__port_table.values():
+            raise PortError(port, f"tidak bisa dipakai, {device.hostname} sudah tercolok", self._hostname)
         self.__port_table[port] = device
 
     def process_packet(self, packet):       # override
         if not self._is_online:
-            return False
+            raise DeviceOfflineError(self._hostname)
         for port, device in self.__port_table.items():
             if device.ip_address == packet.destination_ip:
                 self.report(f"ke port {port} (MAC {device.mac_address})")
                 return device.process_packet(packet)
-        return False
+        raise RoutingError(packet.destination_ip, self._hostname)
 
 
 class Server(LoggerMixin, NetworkDevice):
@@ -208,8 +228,8 @@ class Server(LoggerMixin, NetworkDevice):
         self.service = service
 
     def process_packet(self, packet):       # override
-        if not super().process_packet(packet):
-            return False
+        if not super().process_packet(packet):   # raise jika OFF
+            raise RoutingError(packet.destination_ip, self._hostname)
         self.log(f"{packet.source_ip}: {packet.payload}")
         self.report(f"paket diterima ({self.service})")
         return True
@@ -217,6 +237,10 @@ class Server(LoggerMixin, NetworkDevice):
 
 class Link:
     def __init__(self, device_a, device_b, bandwidth):
+        if device_a is device_b:
+            raise TopologyError(f"{device_a.hostname} tidak boleh dihubungkan ke dirinya sendiri")
+        if isinstance(bandwidth, bool) or not isinstance(bandwidth, (int, float)) or bandwidth <= 0:
+            raise TopologyError(f"Bandwidth harus lebih dari 0 Mbps, diterima: {bandwidth!r}")
         self.device_a = device_a
         self.device_b = device_b
         self.bandwidth = bandwidth
@@ -229,15 +253,33 @@ class NetworkTopology:
         self.__links = []                   # composition
 
     def add_device(self, device):
+        if not isinstance(device, NetworkDevice):
+            raise TopologyError("Hanya perangkat jaringan yang bisa ditambahkan", self.name)
+        for existing in self.__devices:
+            if existing == device:
+                raise TopologyError(f"MAC {device.mac_address} sudah terdaftar", self.name, existing.hostname)
+            if existing.ip_address == device.ip_address:
+                raise TopologyError(f"IP {device.ip_address} sudah dipakai", self.name, existing.hostname)
         device.power_on()
         self.__devices.append(device)
 
     def connect(self, device_a, device_b, bandwidth):
-        link = Link(device_a, device_b, bandwidth)
+        for device in (device_a, device_b):
+            if device not in self.__devices:
+                raise TopologyError(f"{device.hostname} belum terdaftar di {self.name}", self.name)
+        link = Link(device_a, device_b, bandwidth)   # bisa raise TopologyError
         self.__links.append(link)
 
+    def get_device(self, hostname):
+        # EAFP: langsung ambil, tangani jika ternyata tidak ada
+        try:
+            return next(d for d in self.__devices if d.hostname == hostname)
+        except StopIteration as error:
+            raise TopologyError(f"perangkat {hostname} tidak ditemukan di {self.name}",
+                                self.name) from error
+
     def send_packet(self, entry_device, packet):
+        if entry_device not in self.__devices:
+            raise TopologyError(f"{entry_device.hostname} belum terdaftar di {self.name}", self.name)
         print(f"Kirim {packet.source_ip} -> {packet.destination_ip}")
-        result = entry_device.process_packet(packet)
-        status = "TERKIRIM" if result else "GAGAL"
-        print("  Hasil:", status)
+        return entry_device.process_packet(packet)
