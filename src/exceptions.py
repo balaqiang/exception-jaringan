@@ -1,4 +1,4 @@
-"""Hierarki custom exception untuk Sistem Manajemen Jaringan Komputer.
+"""Hierarki custom exception untuk Simulasi Jaringan Komputer.
 
 NetworkError (base)
 ├── InvalidAddressError   alamat IP / MAC / prefix routing tidak valid

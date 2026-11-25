@@ -1,4 +1,4 @@
-# Sistem Manajemen Jaringan Komputer — Exception Handling
+# Simulasi Jaringan Komputer — Exception Handling
 
 Tugas P9 Pemrograman Berorientasi Objek (IF23U1411 PAGI2): melanjutkan proyek UTS
 **Kasus 5 – Simulasi Jaringan Komputer (Network Topology & Traffic Manager)** dengan
@@ -16,7 +16,7 @@ menambahkan exception handling.
 
 ## Deskripsi Sistem
 
-Sistem Manajemen Jaringan Komputer dipakai oleh Administrator Jaringan untuk mengelola
+Simulasi Jaringan Komputer dipakai oleh Administrator Jaringan untuk mengelola
 infrastruktur perangkat jaringan, memantau status koneksi, dan mensimulasikan pengiriman paket
 data antarperangkat dalam topologi LAN/WAN. Administrator mendaftarkan perangkat (Router, Switch,
 Server), mengatur alamat IP, alamat MAC, dan bandwidth, lalu menghubungkan perangkat ke tabel

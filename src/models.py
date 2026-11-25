@@ -1,4 +1,4 @@
-"""Kelas domain Sistem Manajemen Jaringan Komputer (dengan exception handling)."""
+"""Kelas domain Simulasi Jaringan Komputer (dengan exception handling)."""
 import re
 
 from exceptions import (
