@@ -45,3 +45,33 @@ Asumsi (dari UTS, dengan pembaruan):
 | 5 | Nomor port switch harus 1..`total_ports`, satu port hanya untuk satu perangkat, dan satu perangkat hanya di satu port | `Switch.__init__()`, `Switch.connect_port()` | `PortError` |
 | 6 | Paket harus punya rute: prefix tujuan ada di tabel routing dan IP tujuan ada di tabel port switch | `Router/Switch/Server.process_packet()` | `RoutingError` |
 | 7 | Bandwidth link harus > 0, perangkat tidak boleh dihubungkan ke dirinya sendiri, MAC/IP tidak boleh ganda dalam satu topologi, dan perangkat harus terdaftar sebelum dihubungkan atau dipakai mengirim paket | `Link.__init__()`, `NetworkTopology.add_device()/connect()/send_packet()` | `TopologyError` |
+
+## 2. Daftar Custom Exception
+
+Semua exception ada di [`src/exceptions.py`](src/exceptions.py). Setiap kelas punya `__init__`
+dengan atribut konteks dan memanggil `super().__init__(pesan)` (rantai sampai ke `Exception`).
+`NetworkError` adalah base exception, sehingga seluruh pelanggaran aturan bisnis dapat ditangkap
+dengan satu `except NetworkError`.
+
+```
+Exception
+└── NetworkError                (message, hostname)
+    ├── InvalidAddressError     (address, kind)
+    ├── PacketError             (field, value)
+    │   └── TTLExpiredError     (destination)
+    ├── DeviceOfflineError      (action)
+    ├── PortError               (port)
+    ├── RoutingError            (destination)
+    └── TopologyError           (topology)
+```
+
+| Nama | Class induk | Atribut konteks | Kapan dimunculkan | Method yang memunculkan | Cara program menangani |
+|------|-------------|-----------------|-------------------|-------------------------|------------------------|
+| `NetworkError` | `Exception` | `message`, `hostname` | Base, tidak di-raise langsung | — | `except NetworkError` terakhir sebagai penangkap umum di `simulate_packets`, `run_rule_checks`, dan `main` |
+| `InvalidAddressError` | `NetworkError` | `address`, `kind` | IP / MAC / prefix routing tidak valid | setter `ip_address`, `Packet.source_ip/destination_ip`, `NetworkDevice.__init__`, `Router.add_route` | Ditampilkan "Ditolak (alamat)"; nilai lama tetap dipakai |
+| `PacketError` | `NetworkError` | `field`, `value` | TTL di luar 0–255 / bukan integer, payload kosong | setter `Packet.ttl`, `Packet.payload` | Ditampilkan "Ditolak (paket)"; paket tidak dibuat |
+| `TTLExpiredError` | `PacketError` | `destination` | TTL habis saat diteruskan router | `Router.process_packet` | Ditangkap paling awal di `simulate_packets` sebagai "GAGAL [TTL]" |
+| `DeviceOfflineError` | `NetworkError` | `action` | Perangkat OFF diminta memproses paket | `process_packet` (semua perangkat) | "GAGAL [OFFLINE]"; simulasi lanjut ke paket berikutnya |
+| `PortError` | `NetworkError` | `port` | Port di luar 1..total, sudah dipakai, perangkat sudah tercolok, port bukan angka | `Switch.__init__`, `Switch.connect_port`, `parse_port` (`raise ... from ValueError`) | "Ditolak (port)" beserta penyebab aslinya |
+| `RoutingError` | `NetworkError` | `destination` | Tidak ada prefix yang cocok / IP tidak ada di tabel port | `Router/Switch/Server.process_packet` | "GAGAL [ROUTING]"; pada paket kritis dicatat audit lalu di-re-raise ke `main` |
+| `TopologyError` | `NetworkError` | `topology` | Bandwidth ≤ 0, link ke diri sendiri, MAC/IP ganda, perangkat belum terdaftar / tidak ditemukan | `Link.__init__`, `NetworkTopology.add_device/connect/send_packet/get_device`, `Router.add_route` | "Ditolak (topologi)"; `get_device` menyertakan penyebab `StopIteration` |
