@@ -1,0 +1,140 @@
+classDiagram
+    direction TB
+
+    class Exception
+    class NetworkError {
+        <<exception>>
+        +message: str
+        +hostname: str
+        +#95;#95;init#95;#95;(message, hostname=None)
+        +#95;#95;str#95;#95;() str
+    }
+    class InvalidAddressError {
+        <<exception>>
+        +address: str
+        +kind: str
+    }
+    class PacketError {
+        <<exception>>
+        +field: str
+        +value
+    }
+    class TTLExpiredError {
+        <<exception>>
+        +destination: str
+    }
+    class DeviceOfflineError {
+        <<exception>>
+        +action: str
+    }
+    class PortError {
+        <<exception>>
+        +port
+    }
+    class RoutingError {
+        <<exception>>
+        +destination: str
+    }
+    class TopologyError {
+        <<exception>>
+        +topology: str
+    }
+
+    Exception <|-- NetworkError
+    NetworkError <|-- InvalidAddressError
+    NetworkError <|-- PacketError
+    PacketError <|-- TTLExpiredError
+    NetworkError <|-- DeviceOfflineError
+    NetworkError <|-- PortError
+    NetworkError <|-- RoutingError
+    NetworkError <|-- TopologyError
+
+    class Packet {
+        +MAX_TTL: int$
+        -__source_ip: str
+        -__destination_ip: str
+        -__payload: str
+        -__ttl: int
+        +source_ip «property»
+        +destination_ip «property»
+        +payload «property»
+        +ttl «property»
+    }
+    class NetworkDevice {
+        +device_count: int$
+        +MAC_PATTERN$
+        #_hostname: str
+        -__ip_address: str
+        -__mac_address: str
+        #_is_online: bool
+        +is_valid_ip(ip)$ bool
+        +is_valid_mac(mac)$ bool
+        +get_device_count()$ int
+        +ip_address «property»
+        +power_on()
+        +power_off()
+        +report(message)
+        +process_packet(packet) bool
+        +#95;#95;eq#95;#95;(other) bool
+        +#95;#95;str#95;#95;() str
+    }
+    class LoggerMixin {
+        <<mixin>>
+        -__logs: list
+        +log(message)
+        +get_logs() list
+    }
+    class Router {
+        +PREFIX_PATTERN$
+        -__routing_table: dict
+        +add_route(prefix, next_hop)
+        +process_packet(packet) bool
+    }
+    class Switch {
+        #_total_ports: int
+        -__port_table: dict
+        +connect_port(port, device)
+        +process_packet(packet) bool
+    }
+    class Server {
+        +service: str
+        +process_packet(packet) bool
+    }
+    class Link {
+        +device_a: NetworkDevice
+        +device_b: NetworkDevice
+        +bandwidth: int
+    }
+    class NetworkTopology {
+        +name: str
+        -__devices: list
+        -__links: list
+        +add_device(device)
+        +connect(a, b, bandwidth)
+        +get_device(hostname) NetworkDevice
+        +send_packet(entry_device, packet) bool
+    }
+
+    NetworkDevice <|-- Router
+    NetworkDevice <|-- Switch
+    NetworkDevice <|-- Server
+    LoggerMixin <|-- Router
+    LoggerMixin <|-- Server
+    NetworkTopology "1" *-- "0..*" Link : composition
+    NetworkTopology "1" o-- "0..*" NetworkDevice : aggregation
+    Switch "0..*" o-- "0..*" NetworkDevice : port
+    Link "0..*" --> "2" NetworkDevice
+    Router "0..*" --> "0..*" NetworkDevice : next hop
+    NetworkDevice ..> Packet : process
+
+    Packet ..> NetworkError : «raise»
+    NetworkDevice ..> NetworkError : «raise»
+    Link ..> TopologyError : «raise»
+    NetworkTopology ..> NetworkError : «raise»
+
+    note for Packet "setter source_ip, destination_ip → InvalidAddressError<br>setter ttl, payload → PacketError"
+    note for NetworkDevice "konstruktor → InvalidAddressError (MAC), TopologyError (hostname)<br>setter ip_address → InvalidAddressError<br>process_packet → DeviceOfflineError"
+    note for Router "add_route → InvalidAddressError, TopologyError<br>process_packet → DeviceOfflineError, TTLExpiredError, RoutingError"
+    note for Switch "konstruktor, connect_port → PortError<br>process_packet → DeviceOfflineError, RoutingError"
+    note for Server "process_packet → DeviceOfflineError, RoutingError"
+    note for NetworkTopology "add_device, connect, send_packet → TopologyError<br>get_device → TopologyError (raise ... from StopIteration)"
