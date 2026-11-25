@@ -6,8 +6,6 @@ menambahkan exception handling.
 
 ## Identitas
 
-**Kelompok:** _(isi nomor kelompok sesuai LMS)_
-
 | NIM        | Nama                     | Akun Git        |
 |------------|--------------------------|-----------------|
 | 2501020053 | I Putu Bala Krishna Dasa | balaqiang       |
