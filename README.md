@@ -248,6 +248,6 @@ Semua skenario selesai dijalankan tanpa crash.
 
 | Anggota | Akun | Peran dalam tugas ini |
 |---------|------|-----------------------|
-| I Putu Bala Krishna Dasa | balaqiang | Mengetik ulang kode UTS sebagai commit awal, identifikasi aturan bisnis, program utama (try/except/else/finally, raise ... from, re-raise, EAFP), dokumentasi README |
+| I Putu Bala Krishna Dasa | balaqiang | Mengubah setter dan method class domain agar memakai `raise` (`src/models.py`), unit test (`src/test_models.py`) |
 | I Putu Gede Swanjaya | PetengSz | Merancang hierarki custom exception (`src/exceptions.py`), daftar custom exception, revisi class diagram |
-| Dimas Raditya Putu Jati | dimasradityaputujati | Mengubah setter dan method class domain agar memakai `raise` (`src/models.py`), unit test (`src/test_models.py`) |
+| Dimas Raditya Putu Jati | dimasradityaputujati | Mengetik ulang kode UTS sebagai commit awal, identifikasi aturan bisnis, program utama (try/except/else/finally, raise ... from, re-raise, EAFP), dokumentasi README |
