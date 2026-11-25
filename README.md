@@ -12,7 +12,7 @@ menambahkan exception handling.
 |------------|--------------------------|-----------------|
 | 2501020053 | I Putu Bala Krishna Dasa | balaqiang       |
 | 2501020052 | I Putu Gede Swanjaya     | PetengSz        |
-| 2501020062 | Dimas Raditya Putu Jati  | ZeleMarsh7mary  |
+| 2501020062 | Dimas Raditya Putu Jati  | dimasradityaputujati |
 
 ## Deskripsi Sistem
 
@@ -252,4 +252,4 @@ Semua skenario selesai dijalankan tanpa crash.
 |---------|------|-----------------------|
 | I Putu Bala Krishna Dasa | balaqiang | Mengetik ulang kode UTS sebagai commit awal, identifikasi aturan bisnis, program utama (try/except/else/finally, raise ... from, re-raise, EAFP), dokumentasi README |
 | I Putu Gede Swanjaya | PetengSz | Merancang hierarki custom exception (`src/exceptions.py`), daftar custom exception, revisi class diagram |
-| Dimas Raditya Putu Jati | ZeleMarsh7mary | Mengubah setter dan method class domain agar memakai `raise` (`src/models.py`), unit test (`src/test_models.py`) |
+| Dimas Raditya Putu Jati | dimasradityaputujati | Mengubah setter dan method class domain agar memakai `raise` (`src/models.py`), unit test (`src/test_models.py`) |
