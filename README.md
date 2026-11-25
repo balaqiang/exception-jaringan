@@ -75,3 +75,24 @@ Exception
 | `PortError` | `NetworkError` | `port` | Port di luar 1..total, sudah dipakai, perangkat sudah tercolok, port bukan angka | `Switch.__init__`, `Switch.connect_port`, `parse_port` (`raise ... from ValueError`) | "Ditolak (port)" beserta penyebab aslinya |
 | `RoutingError` | `NetworkError` | `destination` | Tidak ada prefix yang cocok / IP tidak ada di tabel port | `Router/Switch/Server.process_packet` | "GAGAL [ROUTING]"; pada paket kritis dicatat audit lalu di-re-raise ke `main` |
 | `TopologyError` | `NetworkError` | `topology` | Bandwidth ≤ 0, link ke diri sendiri, MAC/IP ganda, perangkat belum terdaftar / tidak ditemukan | `Link.__init__`, `NetworkTopology.add_device/connect/send_packet/get_device`, `Router.add_route` | "Ditolak (topologi)"; `get_device` menyertakan penyebab `StopIteration` |
+
+## 3. Class Diagram (Revisi)
+
+![Class Diagram](docs/class-diagram.png)
+
+Sumber diagram: [`docs/class-diagram.mmd`](docs/class-diagram.mmd) (Mermaid).
+
+Perubahan dari class diagram UTS:
+
+- Ditambahkan delapan class bertanda stereotype «exception» dengan relasi generalization ke
+  `NetworkError`, dan `NetworkError` ke `Exception`; `TTLExpiredError` merupakan turunan `PacketError`.
+- Catatan (note) kuning pada tiap class domain menunjukkan method/setter mana yang memunculkan
+  exception apa; garis putus-putus «raise» adalah dependency ke exception.
+- Atribut dan method baru: setter `source_ip`, `destination_ip`, `payload` pada `Packet`;
+  `is_valid_mac()`, `MAC_PATTERN`, `power_off()` pada `NetworkDevice`; `PREFIX_PATTERN` pada
+  `Router`; `get_device()` pada `NetworkTopology`. `send_packet()` kini mengembalikan `bool`.
+- `LoggerMixin` diberi stereotype «mixin».
+
+Notasi: `+` public, `#` protected, `-` private, garis bawah = class/static member, segitiga
+kosong = generalization, belah ketupat hitam = composition, belah ketupat putih = aggregation,
+panah = association, putus-putus = dependency.
