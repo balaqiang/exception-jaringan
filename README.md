@@ -1,253 +1,174 @@
-# Simulasi Jaringan Komputer — Exception Handling
+# NetCore TUI
 
-Tugas P9 Pemrograman Berorientasi Objek (IF23U1411 PAGI2): melanjutkan proyek UTS
-**Kasus 5 – Simulasi Jaringan Komputer (Network Topology & Traffic Manager)** dengan
-menambahkan exception handling.
+Data Center Network Management & Traffic Simulator — a keyboard-first
+terminal application built with **Rich**, **pandas**, **NumPy** and
+stdlib **SQLite**.
 
-## Identitas
+Everything is simulated: no socket, subprocess or host network change is
+performed by `src/`. Traffic, latency and utilization values are computed
+from the model and always labelled as simulated.
 
-| NIM        | Nama                     | Akun Git        |
-|------------|--------------------------|-----------------|
-| 2501020053 | I Putu Bala Krishna Dasa | balaqiang       |
-| 2501020052 | I Putu Gede Swanjaya     | PetengSz        |
-| 2501020062 | Dimas Raditya Putu Jati  | dimasradityaputujati |
+## Features
 
-## Deskripsi Sistem
+- Routers, switches and servers with validated IPv4/MAC addressing.
+- IPAM subnets, gateway and next-free-address assignment.
+- Connected, static and default routes with integer longest-prefix match.
+- Switch ports, administrative state and MAC address learning.
+- Layered topology canvas with link up/down toggles and path highlight.
+- Deterministic packet simulation with ARP, TTL decrement per router hop,
+  drop reasons, traceroute and explained hop traces.
+- Simulated traffic flows, capacity vs utilization, and NumPy p50/p95/p99
+  latency plus Unicode sparklines.
+- Live SQLite Inspector: 13-table browser, Pandas column statistics,
+  filtering, pagination and CSV/JSON export.
+- Audit event log with severity/category filters and live tail.
+- Sample labs: `two-router` (reference topology) and `spine-leaf`
+  (2 spines, 4 leaves, 8 servers).
 
-Simulasi Jaringan Komputer dipakai oleh Administrator Jaringan untuk mengelola
-infrastruktur perangkat jaringan, memantau status koneksi, dan mensimulasikan pengiriman paket
-data antarperangkat dalam topologi LAN/WAN. Administrator mendaftarkan perangkat (Router, Switch,
-Server), mengatur alamat IP, alamat MAC, dan bandwidth, lalu menghubungkan perangkat ke tabel
-routing atau port switch. Paket berisi alamat pengirim, alamat penerima, dan payload. Router
-meneruskan paket antarjaringan berdasarkan tabel routing, Switch meneruskan paket dalam satu
-segmen ke port yang sesuai, dan Server menerima paket serta mencatat log trafik.
+## Requirements
 
-Asumsi (dari UTS, dengan pembaruan):
+- Python 3.12+
+- `rich`, `pandas`, `numpy` (runtime)
+- `pytest`, `ruff`, `ty` (development)
 
-1. PC pada gambaran kasus diwakili oleh Server sebagai perangkat akhir.
-2. Setiap perangkat memiliki satu alamat IP dan satu alamat MAC; MAC unik dalam satu topologi.
-3. Tabel routing memakai awalan IP berupa teks, misalnya `"192.168.10."`.
-4. TTL awal paket 64 dan berkurang 1 di setiap router. **Diperbarui:** paket yang tidak punya
-   rute, TTL-nya habis, atau dikirim ke perangkat OFF tidak lagi menghasilkan `False` diam-diam,
-   melainkan memunculkan exception.
-5. **Baru:** perangkat baru berstatus ON setelah didaftarkan ke topologi (`add_device`).
-
-## 1. Aturan Bisnis yang Dapat Dilanggar
-
-| No | Aturan bisnis | Dicek di | Exception |
-|----|---------------|----------|-----------|
-| 1 | Alamat IP harus IPv4 valid (4 oktet, masing-masing 0–255); MAC harus berformat `XX:XX:XX:XX:XX:XX`; prefix routing berformat `angka.` (mis. `192.168.10.`) | setter `ip_address`, `Packet.source_ip/destination_ip`, `NetworkDevice.__init__`, `Router.add_route()` | `InvalidAddressError` |
-| 2 | TTL paket harus bilangan bulat 0–255 dan payload tidak boleh kosong | setter `Packet.ttl`, `Packet.payload` | `PacketError` |
-| 3 | Paket yang TTL-nya habis (menjadi 0) di router harus dibuang | `Router.process_packet()` | `TTLExpiredError` |
-| 4 | Perangkat yang OFF tidak boleh memproses paket | `process_packet()` pada semua perangkat | `DeviceOfflineError` |
-| 5 | Nomor port switch harus 1..`total_ports`, satu port hanya untuk satu perangkat, dan satu perangkat hanya di satu port | `Switch.__init__()`, `Switch.connect_port()` | `PortError` |
-| 6 | Paket harus punya rute: prefix tujuan ada di tabel routing dan IP tujuan ada di tabel port switch | `Router/Switch/Server.process_packet()` | `RoutingError` |
-| 7 | Bandwidth link harus > 0, perangkat tidak boleh dihubungkan ke dirinya sendiri, MAC/IP tidak boleh ganda dalam satu topologi, dan perangkat harus terdaftar sebelum dihubungkan atau dipakai mengirim paket | `Link.__init__()`, `NetworkTopology.add_device()/connect()/send_packet()` | `TopologyError` |
-
-## 2. Daftar Custom Exception
-
-Semua exception ada di [`src/exceptions.py`](src/exceptions.py). Setiap kelas punya `__init__`
-dengan atribut konteks dan memanggil `super().__init__(pesan)` (rantai sampai ke `Exception`).
-`NetworkError` adalah base exception, sehingga seluruh pelanggaran aturan bisnis dapat ditangkap
-dengan satu `except NetworkError`.
-
-```
-Exception
-└── NetworkError                (message, hostname)
-    ├── InvalidAddressError     (address, kind)
-    ├── PacketError             (field, value)
-    │   └── TTLExpiredError     (destination)
-    ├── DeviceOfflineError      (action)
-    ├── PortError               (port)
-    ├── RoutingError            (destination)
-    └── TopologyError           (topology)
-```
-
-| Nama | Class induk | Atribut konteks | Kapan dimunculkan | Method yang memunculkan | Cara program menangani |
-|------|-------------|-----------------|-------------------|-------------------------|------------------------|
-| `NetworkError` | `Exception` | `message`, `hostname` | Base, tidak di-raise langsung | — | `except NetworkError` terakhir sebagai penangkap umum di `simulate_packets`, `run_rule_checks`, dan `main` |
-| `InvalidAddressError` | `NetworkError` | `address`, `kind` | IP / MAC / prefix routing tidak valid | setter `ip_address`, `Packet.source_ip/destination_ip`, `NetworkDevice.__init__`, `Router.add_route` | Ditampilkan "Ditolak (alamat)"; nilai lama tetap dipakai |
-| `PacketError` | `NetworkError` | `field`, `value` | TTL di luar 0–255 / bukan integer, payload kosong | setter `Packet.ttl`, `Packet.payload` | Ditampilkan "Ditolak (paket)"; paket tidak dibuat |
-| `TTLExpiredError` | `PacketError` | `destination` | TTL habis saat diteruskan router | `Router.process_packet` | Ditangkap paling awal di `simulate_packets` sebagai "GAGAL [TTL]" |
-| `DeviceOfflineError` | `NetworkError` | `action` | Perangkat OFF diminta memproses paket | `process_packet` (semua perangkat) | "GAGAL [OFFLINE]"; simulasi lanjut ke paket berikutnya |
-| `PortError` | `NetworkError` | `port` | Port di luar 1..total, sudah dipakai, perangkat sudah tercolok, port bukan angka | `Switch.__init__`, `Switch.connect_port`, `parse_port` (`raise ... from ValueError`) | "Ditolak (port)" beserta penyebab aslinya |
-| `RoutingError` | `NetworkError` | `destination` | Tidak ada prefix yang cocok / IP tidak ada di tabel port | `Router/Switch/Server.process_packet` | "GAGAL [ROUTING]"; pada paket kritis dicatat audit lalu di-re-raise ke `main` |
-| `TopologyError` | `NetworkError` | `topology` | Bandwidth ≤ 0, link ke diri sendiri, MAC/IP ganda, perangkat belum terdaftar / tidak ditemukan | `Link.__init__`, `NetworkTopology.add_device/connect/send_packet/get_device`, `Router.add_route` | "Ditolak (topologi)"; `get_device` menyertakan penyebab `StopIteration` |
-
-## 3. Class Diagram (Revisi)
-
-![Class Diagram](docs/class-diagram.png)
-
-Sumber diagram: [`docs/class-diagram.mmd`](docs/class-diagram.mmd) (Mermaid).
-
-Perubahan dari class diagram UTS:
-
-- Ditambahkan delapan class bertanda stereotype «exception» dengan relasi generalization ke
-  `NetworkError`, dan `NetworkError` ke `Exception`; `TTLExpiredError` merupakan turunan `PacketError`.
-- Catatan (note) kuning pada tiap class domain menunjukkan method/setter mana yang memunculkan
-  exception apa; garis putus-putus «raise» adalah dependency ke exception.
-- Atribut dan method baru: setter `source_ip`, `destination_ip`, `payload` pada `Packet`;
-  `is_valid_mac()`, `MAC_PATTERN`, `power_off()` pada `NetworkDevice`; `PREFIX_PATTERN` pada
-  `Router`; `get_device()` pada `NetworkTopology`. `send_packet()` kini mengembalikan `bool`.
-- `LoggerMixin` diberi stereotype «mixin».
-
-Notasi: `+` public, `#` protected, `-` private, garis bawah = class/static member, segitiga
-kosong = generalization, belah ketupat hitam = composition, belah ketupat putih = aggregation,
-panah = association, putus-putus = dependency.
-
-## 4. Perubahan Setter dan Method (raise)
-
-Kelas domain di [`src/models.py`](src/models.py) tidak lagi menolak data dengan `return False`
-atau mengabaikannya, dan tidak mencetak pesan error; semua penolakan berupa `raise`.
-
-| Kelas | Setter / method | Sebelum (UTS) | Sesudah |
-|-------|-----------------|---------------|---------|
-| `Packet` | `ttl` | `ValueError` | `PacketError` (juga menolak non-integer) |
-| `Packet` | `source_ip`, `destination_ip`, `payload` | tanpa validasi | `InvalidAddressError` / `PacketError` |
-| `NetworkDevice` | `ip_address` | `ValueError` | `InvalidAddressError` |
-| `NetworkDevice` | `__init__` | MAC & hostname tidak dicek | `InvalidAddressError` / `TopologyError`; `device_count` hanya bertambah jika valid |
-| `NetworkDevice` | `process_packet` | `return False` jika OFF | `DeviceOfflineError` |
-| `Router` | `add_route` | tanpa validasi | `InvalidAddressError` / `TopologyError` |
-| `Router` | `process_packet` | `return False` + print "tidak ada rute" | `TTLExpiredError`, `RoutingError` |
-| `Switch` | `__init__`, `connect_port` | `ValueError` untuk port di luar jangkauan | `PortError` (jangkauan, port terpakai, perangkat ganda) |
-| `Switch` | `process_packet` | `return False` | `DeviceOfflineError`, `RoutingError` |
-| `Server` | `process_packet` | `return False` | `DeviceOfflineError`, `RoutingError` |
-| `Link` | `__init__` | tanpa validasi | `TopologyError` |
-| `NetworkTopology` | `add_device`, `connect`, `send_packet` | tanpa validasi | `TopologyError` |
-| `NetworkTopology` | `get_device` (baru) | — | EAFP, `raise TopologyError(...) from StopIteration` |
-
-## 5. Program Utama
-
-[`src/main.py`](src/main.py) memakai `try / except / else / finally` di beberapa tempat:
-
-| Bagian | Skenario | Teknik |
-|--------|----------|--------|
-| `simulate_packets()` | 1 paket berhasil, 4 gagal (tidak ada rute di R1, tidak ada di port SW1, BACKUP-01 OFF, TTL habis) | `except` dari spesifik ke umum: `TTLExpiredError` → `RoutingError` → `DeviceOfflineError` → `NetworkError`; `else` menghitung paket terkirim; `finally` menampilkan sisa TTL |
-| `run_rule_checks()` | 10 pelanggaran aturan + 1 aksi valid | `InvalidAddressError` → `PacketError` → `PortError` → `TopologyError` → `NetworkError`; `else` hanya untuk aksi valid; `finally` menampilkan jumlah perangkat |
-| `parse_port()` | Port dari konfigurasi teks `"dua"` | **EAFP** (`int()` langsung dicoba) + **`raise PortError(...) from ValueError`** |
-| `NetworkTopology.get_device()` | Mencari `FW-01` yang tidak ada | **EAFP** + **`raise ... from StopIteration`** |
-| `send_critical()` | Paket kritis ke `10.9.9.9` | **re-raise** (`raise` tanpa argumen) setelah mencatat audit, ditangkap lagi di `main()` |
-| `main()` | Membungkus seluruh simulasi | `finally` selalu menutup simulasi |
-
-Tidak ada `except:` kosong (bare except); setiap `except` menyebut class exception tertentu.
-
-## Struktur Repository
-
-```
-.
-├── README.md
-├── docs/
-│   ├── class-diagram.png     class diagram revisi
-│   └── class-diagram.mmd     sumber Mermaid diagram
-└── src/
-    ├── exceptions.py         hierarki custom exception
-    ├── models.py             class domain dari UTS
-    ├── main.py               program utama
-    └── test_models.py        unit test aturan bisnis
-```
-
-## Cara Menjalankan
-
-Membutuhkan Python 3.8 atau lebih baru, tanpa library tambahan.
+## Install
 
 ```bash
-python src/main.py
+python -m venv .venv
+. .venv/bin/activate
+pip install -e ".[dev]"
 ```
 
-Menjalankan unit test:
+## Run
 
 ```bash
-python -m unittest discover -s src -v
+python -m netcore
+python -m netcore --db ./lab.db --seed spine-leaf
+python -m netcore --render --width 120 --height 36   # one headless frame
 ```
 
-## Contoh Output
+The default database is `$XDG_STATE_HOME/netcore/netcore.db`
+(`~/.local/state/netcore/netcore.db`). `NETCORE_DB` overrides it.
+When the database is empty, `--seed two-router` (default) or
+`--seed spine-leaf` loads a sample lab; `--seed none` starts empty.
 
-```
-=== Simulasi Jaringan: LAN Kantor ===
-Server WEB-01 (192.168.10.10) [ON]
-Server BACKUP-01 (192.168.10.30) [OFF]
-Jumlah perangkat: 5 
+Minimum terminal size is **100×30**. At 80×24 the application shows a
+guard instead of the layout.
 
---- Bagian 1: Pengiriman paket ---
-Kirim 10.0.0.5 -> 192.168.10.10
-  R1: rute via SW1
-  SW1: ke port 1 (MAC CC:CC:CC:00:00:10)
-  WEB-01: paket diterima (HTTP)
-  Hasil: TERKIRIM
-  (TTL tersisa: 63)
-Kirim 10.0.0.5 -> 172.16.0.9
-  GAGAL [ROUTING] : [R1] tidak ada rute ke 172.16.0.9, paket dibuang
-  (TTL tersisa: 63)
-Kirim 10.0.0.5 -> 192.168.10.99
-  R1: rute via SW1
-  GAGAL [ROUTING] : [SW1] tidak ada rute ke 192.168.10.99, paket dibuang
-  (TTL tersisa: 63)
-Kirim 10.0.0.5 -> 192.168.10.30
-  R1: rute via SW1
-  SW1: ke port 3 (MAC CC:CC:CC:00:00:30)
-  GAGAL [OFFLINE] : [BACKUP-01] perangkat OFF, tidak dapat memproses paket
-  (TTL tersisa: 63)
-Kirim 10.0.0.5 -> 192.168.10.20
-  GAGAL [TTL]     : [R1] TTL paket ke 192.168.10.20 habis, paket dibuang
-  (TTL tersisa: 0)
-Ringkasan: 1 dari 5 paket terkirim
+## Keyboard
 
---- Bagian 2: Uji aturan bisnis ---
-Uji: Ubah IP DB-01 menjadi 192.168.10.300
-  Ditolak (alamat)  : [DB-01] Alamat IP tidak valid: '192.168.10.300'
-  -> jumlah perangkat tercatat: 5
-Uji: Buat Server dengan MAC 'zz:zz:zz'
-  Ditolak (alamat)  : [WEB-03] Alamat MAC tidak valid: 'zz:zz:zz'
-  -> jumlah perangkat tercatat: 5
-Uji: Buat paket dengan TTL 300
-  Ditolak (paket)   : TTL harus 0-255, diterima: 300
-  -> jumlah perangkat tercatat: 5
-Uji: Buat paket dengan payload kosong
-  Ditolak (paket)   : Payload paket tidak boleh kosong
-  -> jumlah perangkat tercatat: 5
-Uji: Colokkan DB-01 ke port 30 pada SW1 (24 port)
-  Ditolak (port)    : [SW1] Port 30 tidak tersedia (1-24)
-  -> jumlah perangkat tercatat: 5
-Uji: Colokkan perangkat baru ke port 1 yang sudah dipakai
-  Ditolak (port)    : [SW1] Port 1 sudah dipakai WEB-01
-  -> jumlah perangkat tercatat: 6
-Uji: Colokkan DB-01 dari konfigurasi teks port 'dua'
-  Ditolak (port)    : Port dua harus berupa angka
-    penyebab asli: ValueError("invalid literal for int() with base 10: 'dua'")
-  -> jumlah perangkat tercatat: 6
-Uji: Cari perangkat 'FW-01' di topologi
-  Ditolak (topologi): perangkat FW-01 tidak ditemukan di LAN Kantor
-    penyebab asli: StopIteration()
-  -> jumlah perangkat tercatat: 6
-Uji: Hubungkan SW1 dan WEB-01 dengan bandwidth 0
-  Ditolak (topologi): Bandwidth harus lebih dari 0 Mbps, diterima: 0
-  -> jumlah perangkat tercatat: 6
-Uji: Daftarkan WEB-01 dua kali ke topologi
-  Ditolak (topologi): [WEB-01] MAC CC:CC:CC:00:00:10 sudah terdaftar
-  -> jumlah perangkat tercatat: 6
-Uji: Ubah IP DB-01 menjadi 192.168.10.21 (valid)
-  Diterima: tidak ada aturan bisnis yang dilanggar
-  -> jumlah perangkat tercatat: 6
-Ringkasan: 10 ditolak, 1 diterima
+| Key | Action |
+| --- | --- |
+| `1`–`9`, `0` | Dashboard, Devices, IPAM, Routing, Switch Ports, Topology, Packet Lab, Traffic, Events, Settings |
+| `d` / `D` | SQLite Inspector |
+| `Tab` / `Shift+Tab` | Cycle focus: sidebar → actions → content |
+| `↑` `↓` | Navigate sidebar, actions or table rows |
+| `←` `→` | Move between action buttons / switch inspector table / port grid |
+| `Enter` | Run focused action or open row detail |
+| `/` | Inline filter (SQLite Inspector, Events, Devices) |
+| `Space` | Pause / resume real-time polling |
+| `r` | Force SQLite re-poll and view refresh |
+| `Ctrl+B` | Toggle sidebar |
+| `?` | Key help |
+| `Esc` | Back / close modal / clear filter |
+| `q` / `Ctrl+C` | Quit |
 
---- Bagian 3: Paket kritis (re-raise) ---
-Kirim 10.0.0.5 -> 10.9.9.9
-  [AUDIT] paket kritis gagal (RoutingError), diteruskan ke pemanggil
-  main menerima exception yang dilempar ulang: [R1] tidak ada rute ke 10.9.9.9, paket dibuang
-  pemeriksaan paket kritis selesai
+## Screens
 
---- Bagian 4: Log perangkat ---
-Log WEB-01: ['10.0.0.5: GET /index.html']
-Log R1: ['DROP 172.16.0.9', 'TTL EXPIRED 192.168.10.20', 'DROP 10.9.9.9']
+| Screen | Purpose |
+| --- | --- |
+| Dashboard | Device/link counts, IPAM utilization, simulated latency, events |
+| Topology | Router/switch/server canvas, link administration, path highlight |
+| Packet Lab | Send packet or traceroute, hop-by-hop decision trace |
+| Traffic Monitor | Link load, utilization bars, sparklines, active flows |
+| Devices | CRUD, status cycle, interface inspector |
+| IPAM Subnets | Subnet capacity, assign/release IPv4 addresses |
+| Routing Table | Router selector, route CRUD, interactive LPM lookup |
+| Switch Ports | 12-per-row port grid, admin toggle, MAC table |
+| SQLite Inspector | Live 13-table browser, Pandas stats, filter, export |
+| Event Logs | Filterable audit trail, live tail, CSV/JSON export |
+| Settings | TTL, ARP/MAC timeout, max hops, retention, seed, poll rate, labs |
 
-Semua skenario selesai dijalankan tanpa crash.
-=== Simulasi selesai ===
+## Architecture
+
+Layered modular monolith:
+
+```text
+netcore.tui            Rich views, components, raw keyboard loop
+      ↓
+netcore.application    services, ports, EventBus, frozen DTOs
+      ↓
+netcore.domain         pure stdlib network model and simulation engine
+      ↑
+netcore.infrastructure SQLite persistence, pandas/NumPy analytics, watcher
 ```
 
-## Pembagian Peran
+- `netcore.domain` imports no Rich/pandas/numpy/sqlite3 and performs no I/O.
+- `netcore.application` returns frozen DTOs only.
+- `netcore.tui` never imports sqlite3, pandas, numpy or infrastructure.
+- SQL lives only in parameterised repositories.
+- `src/netcore/bootstrap.py` is the single composition root.
 
-| Anggota | Akun | Peran dalam tugas ini |
-|---------|------|-----------------------|
-| I Putu Bala Krishna Dasa | balaqiang | Mengubah setter dan method class domain agar memakai `raise` (`src/models.py`), unit test (`src/test_models.py`) |
-| I Putu Gede Swanjaya | PetengSz | Merancang hierarki custom exception (`src/exceptions.py`), daftar custom exception, revisi class diagram |
-| Dimas Raditya Putu Jati | dimasradityaputujati | Mengetik ulang kode UTS sebagai commit awal, identifikasi aturan bisnis, program utama (try/except/else/finally, raise ... from, re-raise, EAFP), dokumentasi README |
+The real-time monitor is a daemon thread with its own read-only WAL
+connection. It polls `PRAGMA data_version`, wakes immediately on
+in-process EventBus signals, computes a snapshot and posts it to the UI
+queue. Only the main thread mutates state and calls `rich.live.Live`.
+
+## Network behaviour
+
+- IPv4 parsing rejects leading zeros, spaces, host bits in subnets and
+  reserved network/broadcast addresses.
+- LPM is implemented on `ipaddress` networks, never strings; ties break
+  by admin distance, metric, then insertion order.
+- Routers decrement TTL and drop with `TTL_EXPIRED` at zero.
+- Switches forward on destination MAC only and learn source MACs.
+- ARP is explicit per device, does not consume TTL and is visible in the
+  hop trace.
+- Offline devices, admin-down links/interfaces and down switch ports
+  produce typed drop reasons.
+- Capacity is configuration; utilization is derived from active simulated
+  flows and never persisted as configuration.
+
+Full rules: `docs/NETWORK_SPEC.md`.
+
+## Tests and quality gates
+
+```bash
+python -m pytest
+python -m ruff check .
+python -m ruff format --check .
+ty check src/netcore
+```
+
+The suite covers AT-01…AT-12 (delivery, validation, duplicates, LPM, TTL,
+offline, link down, invalid port, persistence, keyboard navigation),
+NumPy empty/NaN safety, WAL concurrent writes, and layer import guards.
+
+## Project layout
+
+```text
+docs/            product, architecture, network, UI and UML specs
+.ai/             agent roles, skills and project state
+src/netcore/     application package
+tests/           architecture, unit, integration and TUI tests
+```
+
+## Legacy assignment
+
+This repository originated as the P9 OOP assignment
+“Simulasi Jaringan Komputer — Exception Handling”. The original flat
+files remain in `src/exceptions.py`, `src/models.py`, `src/main.py` and
+`src/test_models.py` for reference, but the NetCore package is now the
+maintained implementation and preserves the original class names
+(`NetworkDevice`, `Router`, `Switch`, `Server`, `Packet`, `Link`,
+`NetworkTopology`, `LoggerMixin`).
+
+## Team (original assignment)
+
+| NIM | Name | GitHub |
+| --- | --- | --- |
+| 2501020053 | I Putu Bala Krishna Dasa | balaqiang |
+| 2501020052 | I Putu Gede Swanjaya | PetengSz |
+| 2501020062 | Dimas Raditya Putu Jati | dimasradityaputujati |
+
+Licensed under the Apache License 2.0. Simulation only.

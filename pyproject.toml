@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netcore-tui"
+version = "0.1.0"
+description = "NetCore TUI - Data Center Network Management & Traffic Simulator"
+requires-python = ">=3.12"
+dependencies = [
+    "rich>=13.9,<15.0",
+    "pandas>=2.2,<3.0",
+    "numpy>=2.0,<3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "ty",
+]
+
+[project.scripts]
+netcore = "netcore.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+src = ["src", "tests"]
+# The original P9 assignment files stay untouched outside the NetCore package.
+extend-exclude = [
+    "src/exceptions.py",
+    "src/main.py",
+    "src/models.py",
+    "src/test_models.py",
+    ".ai/**",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF", "ANN", "PL", "PT"]
+ignore = [
+    "ANN401",
+    "PLR0913",
+    "PLR2004",
+    # Lazy imports keep platform modules (termios/msvcrt) optional and avoid cycles.
+    "PLC0415",
+    # Dispatch/engine methods legitimately have many branches and returns.
+    "PLR0911",
+    "PLR0912",
+    # The UI intentionally uses en dashes and arrow glyphs.
+    "RUF001",
+    "RUF002",
+    "UP047",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN", "PLR2004", "S101"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra --strict-markers"
+
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.ty.src]
+include = ["src"]

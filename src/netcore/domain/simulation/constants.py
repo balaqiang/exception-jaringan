@@ -1,0 +1,5 @@
+"""Simulated processing constants (NETWORK_SPEC §10.3)."""
+
+ROUTER_PROCESSING_MS = 0.05
+SWITCH_PROCESSING_MS = 0.01
+DEFAULT_LINK_LATENCY_MS = 0.1
